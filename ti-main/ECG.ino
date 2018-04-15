@@ -1,74 +1,67 @@
-void FALLING_interrupt_ECG_p();
-void RISING_interrupt_ECG_p();
-void FALLING_interrupt_ECG_n();
-void RISING_interrupt_ECG_n();
+volatile unsigned i = 0;
 
-class ECG
+void timer_func()
 {
-	static unsigned int raw[250];
-	static float time_ms;
-	static int  A_pin;
-	static int  LOp_pin;
-	static int  LOn_pin;
-	static bool ecg_active_p;
-	static bool ecg_active_n;
-public:
-
-	ECG(float _time_ms, int _A_pin, int _LOp_pin, int _LOn_pin)
-	{
-		noInterrupts();
-
-		time_ms = time_ms;
-		A_pin   = _A_pin; 
-		LOp_pin = _LOp_pin; 
-		LOn_pin = _LOn_pin;
-		ecg_active_p = false;
-		ecg_active_n = false;
-
-		pinMode(LOp_pin, INPUT);
-		pinMode(LOn_pin, INPUT);
-
-		attachInterrupt(LOp_pin, &FALLING_interrupt_ECG_p, FALLING);
-		attachInterrupt(LOn_pin, &FALLING_interrupt_ECG_n, FALLING);
-
-		interrupts();
-	}
-
-	~ECG()
-	{
-
-	}
-
-	friend void FALLING_interrupt_ECG_p();
-	friend void RISING_interrupt_ECG_p();
-	friend void FALLING_interrupt_ECG_n();
-	friend void RISING_interrupt_ECG_n();
-
-};
-
-void FALLING_interrupt_ECG_p()
-{
-	ECG::ecg_active_p = true;
-	attachInterrupt(ECG::LOp_pin, &RISING_interrupt_ECG_p, RISING);
-
-	while(){}
+  if(i < 150)
+    {
+      if(digitalRead(LOp) == 0 && digitalRead(LOn) == 0)
+      {
+        ECG::raw[i] = analogRead(A_pin);
+        i++;
+      }
+    }
+    else
+    {
+      i = 0;
+      volatile unsigned *tmp = ECG::raw;
+      ECG::raw = ECG::raw_swap;
+      ECG::raw_swap = ECG::raw;
+      EventOverload.send();
+    }
 }
 
-void RISING_interrupt_ECG_p()
+Timer *analogT = new Timer();
+volatile bool old_state = false;
+volatile unsigned  old_fill_mks;
+
+void setup_ECG()
 {
-	ECG::ecg_active_p = false;
-	attachInterrupt(ECG::LOp_pin, &FALLING_interrupt_ECG_p, FALLING);
+  pinMode(LOp, INPUT);
+  pinMode(LOn, INPUT);
+
+  analogT->begin(timer_func, fill_mks, 1);
+  analogT->start();
+  old_fill_mks = fill_mks;
 }
 
-void FALLING_interrupt_ECG_n()
+void loop_ECG()
 {
-	ECG::ecg_active_n = true;
-	attachInterrupt(ECG::LOn_pin, &RISING_interrupt_ECG_n, RISING);
+  if(old_fill_mks != fill_mks)
+  {
+    delete analogT;
+    analogT = new Timer();
+    analogT->begin(timer_func, fill_mks, 1);
+    old_fill_mks = fill_mks;
+    ECG::enable = true;
+    old_state   = true;
+    analogT->start();
+  }
+  
+  if(ECG::enable != old_state)
+  {
+    if(ECG::enable)
+    {
+      analogT->start();
+    }
+    else
+    {
+      analogT->stop();
+    }
+    old_state = ECG::enable;
+  }
+  else
+  {
+    sleep(1000);
+  }
 }
 
-void RISING_interrupt_ECG_n()
-{
-	ECG::ecg_active_n = false;
-	attachInterrupt(ECG::LOn_pin, &FALLING_interrupt_ECG_n, FALLING);
-}
-	
